@@ -117,7 +117,7 @@ int main(void)
   MX_ADC1_Init();
   MX_TIM12_Init();
   /* USER CODE BEGIN 2 */
-  Buzzer_OFF;
+  Buzzer_ON;
   DWT_Init(480);
   HAL_TIM_Base_Start_IT(&htim3);
 
