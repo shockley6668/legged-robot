@@ -1,0 +1,23 @@
+# CMake build directories
+cmake-build-*/
+build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# IDE settings
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Binary and object files
+*.elf
+*.bin
+*.hex
+*.map
+*.o
+*.obj
+*.dep
+*.lst
