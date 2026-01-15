@@ -1,27 +1,33 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * File Name          : freertos.c
-  * Description        : Code for freertos applications
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2026 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * File Name          : freertos.c
+ * Description        : Code for freertos applications
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
 #include "FreeRTOS.h"
-#include "task.h"
-#include "main.h"
+#include "body_task.h"
+#include "chassisL_task.h"
+#include "chassisR_task.h"
 #include "cmsis_os.h"
+#include "connect_task.h"
+#include "main.h"
+#include "task.h"
+#include "vbus_check.h"
+
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -59,21 +65,21 @@ osThreadId VBUS_CHECK_TASKHandle;
 
 /* USER CODE END FunctionPrototypes */
 
-void StartDefaultTask(void const * argument);
-void ChassisR_Task(void const * argument);
-void ChassisL_Task(void const * argument);
-void CONNECT_Task(void const * argument);
-void Body_Task(void const * argument);
-void VBUS_CheckTask(void const * argument);
+void StartDefaultTask(void const *argument);
+void ChassisR_Task(void const *argument);
+void ChassisL_Task(void const *argument);
+void CONNECT_Task(void const *argument);
+void Body_Task(void const *argument);
+void VBUS_CheckTask(void const *argument);
 
 extern void MX_USB_DEVICE_Init(void);
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
 /**
-  * @brief  FreeRTOS initialization
-  * @param  None
-  * @retval None
-  */
+ * @brief  FreeRTOS initialization
+ * @param  None
+ * @retval None
+ */
 void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN Init */
 
@@ -123,24 +129,21 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
-
 }
 
 /* USER CODE BEGIN Header_StartDefaultTask */
 /**
-  * @brief  Function implementing the defaultTask thread.
-  * @param  argument: Not used
-  * @retval None
-  */
+ * @brief  Function implementing the defaultTask thread.
+ * @param  argument: Not used
+ * @retval None
+ */
 /* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void const * argument)
-{
+void StartDefaultTask(void const *argument) {
   /* init code for USB_DEVICE */
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN StartDefaultTask */
   /* Infinite loop */
-  for(;;)
-  {
+  for (;;) {
     osDelay(1);
   }
   /* USER CODE END StartDefaultTask */
@@ -148,91 +151,66 @@ void StartDefaultTask(void const * argument)
 
 /* USER CODE BEGIN Header_ChassisR_Task */
 /**
-* @brief Function implementing the CHASSISR_TASK thread.
-* @param argument: Not used
-* @retval None
-*/
+ * @brief Function implementing the CHASSISR_TASK thread.
+ * @param argument: Not used
+ * @retval None
+ */
 /* USER CODE END Header_ChassisR_Task */
-void ChassisR_Task(void const * argument)
-{
+void ChassisR_Task(void const *argument) {
   /* USER CODE BEGIN ChassisR_Task */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+  ChassisR_task();
   /* USER CODE END ChassisR_Task */
 }
 
 /* USER CODE BEGIN Header_ChassisL_Task */
 /**
-* @brief Function implementing the CHASSISL_TASK thread.
-* @param argument: Not used
-* @retval None
-*/
+ * @brief Function implementing the CHASSISL_TASK thread.
+ * @param argument: Not used
+ * @retval None
+ */
 /* USER CODE END Header_ChassisL_Task */
-void ChassisL_Task(void const * argument)
-{
+void ChassisL_Task(void const *argument) {
   /* USER CODE BEGIN ChassisL_Task */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+  ChassisL_task();
   /* USER CODE END ChassisL_Task */
 }
 
 /* USER CODE BEGIN Header_CONNECT_Task */
 /**
-* @brief Function implementing the CONNECT_TASK thread.
-* @param argument: Not used
-* @retval None
-*/
+ * @brief Function implementing the CONNECT_TASK thread.
+ * @param argument: Not used
+ * @retval None
+ */
 /* USER CODE END Header_CONNECT_Task */
-void CONNECT_Task(void const * argument)
-{
+void CONNECT_Task(void const *argument) {
   /* USER CODE BEGIN CONNECT_Task */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+  Connect_task();
   /* USER CODE END CONNECT_Task */
 }
 
 /* USER CODE BEGIN Header_Body_Task */
 /**
-* @brief Function implementing the BODY_TASK thread.
-* @param argument: Not used
-* @retval None
-*/
+ * @brief Function implementing the BODY_TASK thread.
+ * @param argument: Not used
+ * @retval None
+ */
 /* USER CODE END Header_Body_Task */
-void Body_Task(void const * argument)
-{
+void Body_Task(void const *argument) {
   /* USER CODE BEGIN Body_Task */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+  Body_task();
   /* USER CODE END Body_Task */
 }
 
 /* USER CODE BEGIN Header_VBUS_CheckTask */
 /**
-* @brief Function implementing the VBUS_CHECK_TASK thread.
-* @param argument: Not used
-* @retval None
-*/
+ * @brief Function implementing the VBUS_CHECK_TASK thread.
+ * @param argument: Not used
+ * @retval None
+ */
 /* USER CODE END Header_VBUS_CheckTask */
-void VBUS_CheckTask(void const * argument)
-{
+void VBUS_CheckTask(void const *argument) {
   /* USER CODE BEGIN VBUS_CheckTask */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+  VBUS_Check_task();
   /* USER CODE END VBUS_CheckTask */
 }
 
