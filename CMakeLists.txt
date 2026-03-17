@@ -54,6 +54,10 @@ include_directories(User/APP User/Bsp User/Devices/BMI088 User/Devices/DM_Motor 
 add_definitions(-DDEBUG -DUSE_PWR_LDO_SUPPLY -DUSE_HAL_DRIVER -DSTM32H723xx)
 
 file(GLOB_RECURSE SOURCES "Core/*.*" "Middlewares/*.*" "Drivers/*.*" "USB_DEVICE/*.*" "User/*.*")
+# Explicitly add new files to ensure they are picked up if GLOB cache is stale
+list(APPEND SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/User/APP/protocol_task.c")
+list(APPEND SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/User/APP/INS_task.c")
+list(APPEND SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/User/Bsp/bsp_buzzer.c")
 
 set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/STM32H723VGTX_FLASH.ld)
 

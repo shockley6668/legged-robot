@@ -19,19 +19,18 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "FreeRTOS.h"
-#include "body_task.h"
-#include "chassisL_task.h"
-#include "chassisR_task.h"
 #include "cmsis_os.h"
-#include "connect_task.h"
 #include "main.h"
 #include "task.h"
-#include "vbus_check.h"
-
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "INS_task.h"
+#include "body_task.h"
+#include "chassisL_task.h"
+#include "chassisR_task.h"
+#include "protocol_task.h"
+#include "vbus_check.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -51,26 +50,27 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
-
-/* USER CODE END Variables */
 osThreadId defaultTaskHandle;
 osThreadId CHASSISR_TASKHandle;
 osThreadId CHASSISL_TASKHandle;
-osThreadId CONNECT_TASKHandle;
 osThreadId BODY_TASKHandle;
 osThreadId VBUS_CHECK_TASKHandle;
+osThreadId PROTOCOL_TASKHandle;
+osThreadId USB_TX_TASKHandle;
+osThreadId INS_TASKHandle;
+/* USER CODE END Variables */
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
-
-/* USER CODE END FunctionPrototypes */
-
 void StartDefaultTask(void const *argument);
 void ChassisR_Task(void const *argument);
 void ChassisL_Task(void const *argument);
-void CONNECT_Task(void const *argument);
 void Body_Task(void const *argument);
 void VBUS_CheckTask(void const *argument);
+void Protocol_task(void const *argument);
+void USB_Tx_task(void const *argument);
+void INS_Task(void const *argument);
+/* USER CODE END FunctionPrototypes */
 
 extern void MX_USB_DEVICE_Init(void);
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
@@ -82,7 +82,6 @@ void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
  */
 void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN Init */
-
   /* USER CODE END Init */
 
   /* USER CODE BEGIN RTOS_MUTEX */
@@ -98,7 +97,7 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE END RTOS_TIMERS */
 
   /* USER CODE BEGIN RTOS_QUEUES */
-  /* add queues, ... */
+  /* 队列已经由你在 main.c 中安全建立 */
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
@@ -107,36 +106,39 @@ void MX_FREERTOS_Init(void) {
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
   /* definition and creation of CHASSISR_TASK */
-  osThreadDef(CHASSISR_TASK, ChassisR_Task, osPriorityHigh, 0, 512);
+  osThreadDef(CHASSISR_TASK, ChassisR_Task, osPriorityHigh, 0, 1024);
   CHASSISR_TASKHandle = osThreadCreate(osThread(CHASSISR_TASK), NULL);
 
   /* definition and creation of CHASSISL_TASK */
-  osThreadDef(CHASSISL_TASK, ChassisL_Task, osPriorityHigh, 0, 512);
+  osThreadDef(CHASSISL_TASK, ChassisL_Task, osPriorityHigh, 0, 1024);
   CHASSISL_TASKHandle = osThreadCreate(osThread(CHASSISL_TASK), NULL);
 
-  /* definition and creation of CONNECT_TASK */
-  osThreadDef(CONNECT_TASK, CONNECT_Task, osPriorityHigh, 0, 512);
-  CONNECT_TASKHandle = osThreadCreate(osThread(CONNECT_TASK), NULL);
-
   /* definition and creation of BODY_TASK */
-  osThreadDef(BODY_TASK, Body_Task, osPriorityAboveNormal, 0, 512);
-  BODY_TASKHandle = osThreadCreate(osThread(BODY_TASK), NULL);
+  // osThreadDef(BODY_TASK, Body_Task, osPriorityAboveNormal, 0, 512);
+  // BODY_TASKHandle = osThreadCreate(osThread(BODY_TASK), NULL);
 
   /* definition and creation of VBUS_CHECK_TASK */
   osThreadDef(VBUS_CHECK_TASK, VBUS_CheckTask, osPriorityNormal, 0, 128);
   VBUS_CHECK_TASKHandle = osThreadCreate(osThread(VBUS_CHECK_TASK), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
-  /* add threads, ... */
+  /* PROTOCOL_TASK for batch sending motor feedback at 100Hz */
+  // osThreadDef(PROTOCOL_TASK, Protocol_task, osPriorityHigh, 0,
+  //             1024); // Reduced stack
+  // PROTOCOL_TASKHandle = osThreadCreate(osThread(PROTOCOL_TASK), NULL);
+
+  /* definition and creation of USB_TX_TASK */
+  osThreadDef(USB_TX_TASK, USB_Tx_task, osPriorityRealtime, 0, 4096);
+  USB_TX_TASKHandle = osThreadCreate(osThread(USB_TX_TASK), NULL);
+
+  /* definition and creation of INS_TASK */
+  osThreadDef(INS_TASK, INS_Task, osPriorityNormal, 0, 1024);
+  INS_TASKHandle = osThreadCreate(osThread(INS_TASK), NULL);
   /* USER CODE END RTOS_THREADS */
 }
 
 /* USER CODE BEGIN Header_StartDefaultTask */
-/**
- * @brief  Function implementing the defaultTask thread.
- * @param  argument: Not used
- * @retval None
- */
+
 /* USER CODE END Header_StartDefaultTask */
 void StartDefaultTask(void const *argument) {
   /* init code for USB_DEVICE */
@@ -182,11 +184,6 @@ void ChassisL_Task(void const *argument) {
  * @retval None
  */
 /* USER CODE END Header_CONNECT_Task */
-void CONNECT_Task(void const *argument) {
-  /* USER CODE BEGIN CONNECT_Task */
-  Connect_task();
-  /* USER CODE END CONNECT_Task */
-}
 
 /* USER CODE BEGIN Header_Body_Task */
 /**
@@ -216,5 +213,7 @@ void VBUS_CheckTask(void const *argument) {
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
-
+void Protocol_task(void const *argument) { Protocol_task_entry(argument); }
+void USB_Tx_task(void const *argument) { USB_Tx_task_entry(argument); }
+void INS_Task(void const *argument) { INS_task(); }
 /* USER CODE END Application */

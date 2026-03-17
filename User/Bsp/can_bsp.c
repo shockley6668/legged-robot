@@ -3,6 +3,8 @@
 #include "chassisR_task.h"
 #include "dm4310_drv.h"
 #include "fdcan.h"
+#include "main.h"
+#include "protocol_task.h"
 #include "string.h"
 FDCAN_RxHeaderTypeDef RxHeader1;
 uint8_t g_Can1RxData[64];
@@ -15,12 +17,16 @@ uint8_t g_Can3RxData[64];
 
 void FDCAN1_Config(void) {
   FDCAN_FilterTypeDef sFilterConfig;
+
+  // 1. 设置波特率和传统模式 (Classic CAN 1M)
+  bsp_fdcan_set_baud(&hfdcan1, CAN_CLASS, CAN_BR_1M);
+
   /* Configure Rx filter */
   sFilterConfig.IdType = FDCAN_STANDARD_ID; // 扩展ID不接收
   sFilterConfig.FilterIndex = 0;
   sFilterConfig.FilterType = FDCAN_FILTER_MASK;
   sFilterConfig.FilterConfig = FDCAN_FILTER_TO_RXFIFO0;
-  sFilterConfig.FilterID1 = 0x00000000; //
+  sFilterConfig.FilterID1 = 0x00000000; // 掩码模式下设置全0代表接收所有
   sFilterConfig.FilterID2 = 0x00000000; //
   if (HAL_FDCAN_ConfigFilter(&hfdcan1, &sFilterConfig) != HAL_OK) {
     Error_Handler();
@@ -66,6 +72,10 @@ void FDCAN1_Config(void) {
 
 void FDCAN2_Config(void) {
   FDCAN_FilterTypeDef sFilterConfig;
+
+  // 1. 先设置波特率和传统模式 (DM电机通常是 Classic CAN 1M)
+  bsp_fdcan_set_baud(&hfdcan2, CAN_CLASS, CAN_BR_1M);
+
   /* Configure Rx filter */
   sFilterConfig.IdType = FDCAN_STANDARD_ID;
   sFilterConfig.FilterIndex = 1;
@@ -122,20 +132,28 @@ uint8_t canx_send_data(FDCAN_HandleTypeDef *hcan, uint16_t id, uint8_t *data,
   }
 
   TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
-  TxHeader.BitRateSwitch = FDCAN_BRS_ON;
-  TxHeader.FDFormat = FDCAN_FD_CAN; // CANFD
+
+  // 根据初始化设置自动切换 FD 或 Classic 格式
+  if (hcan->Init.FrameFormat == FDCAN_FRAME_CLASSIC) {
+    TxHeader.FDFormat = FDCAN_FRAME_CLASSIC;
+    TxHeader.BitRateSwitch = FDCAN_BRS_OFF;
+  } else {
+    TxHeader.FDFormat = FDCAN_FD_CAN;
+    TxHeader.BitRateSwitch = FDCAN_BRS_ON;
+  }
+
   TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
   TxHeader.MessageMarker = 0; // 消息标记
 
   // 发送CAN指令
-  HAL_FDCAN_AddMessageToTxFifoQ(hcan, &TxHeader, data);
+  if (HAL_FDCAN_AddMessageToTxFifoQ(hcan, &TxHeader, data) != HAL_OK) {
+    return 1;
+  }
   return 0;
 }
 
 extern chassis_t chassis_move;
 extern body_t robot_body;
-int64_t mybuff[5] = {0};
-int64_t mybuff3[9] = {0};
 void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan,
                                uint32_t RxFifo0ITs) {
   if ((RxFifo0ITs & FDCAN_IT_RX_FIFO0_NEW_MESSAGE) != RESET) {
@@ -146,88 +164,25 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan,
       switch (RxHeader1.Identifier) {
       // 右腿
       case 0x15:
-        dm6006_fbdata(&chassis_move.joint_motor[5], g_Can1RxData,
+        dm6006_fbdata(&chassis_move.joint_motor[9], g_Can1RxData,
                       RxHeader1.DataLength);
-        mybuff[0]++;
         break;
       case 0x14:
-        dm8006_fbdata(&chassis_move.joint_motor[6], g_Can1RxData,
+        dm8006_fbdata(&chassis_move.joint_motor[8], g_Can1RxData,
                       RxHeader1.DataLength);
-        mybuff[1]++;
         break;
       case 0x13:
         dm8006_fbdata(&chassis_move.joint_motor[7], g_Can1RxData,
                       RxHeader1.DataLength);
-        mybuff[2]++;
         break;
       case 0x12:
-        dm8006_fbdata(&chassis_move.joint_motor[8], g_Can1RxData,
+        dm8006_fbdata(&chassis_move.joint_motor[6], g_Can1RxData,
                       RxHeader1.DataLength);
-        mybuff[3]++;
         break;
       case 0x11:
-        dm6006_fbdata(&chassis_move.joint_motor[9], g_Can1RxData,
+        dm6006_fbdata(&chassis_move.joint_motor[5], g_Can1RxData,
                       RxHeader1.DataLength);
-        mybuff[4]++;
         break;
-      default:
-        break;
-      }
-    }
-    if (hfdcan->Instance == FDCAN3) {
-      /* Retrieve Rx messages from RX FIFO0 */
-      memset(g_Can3RxData, 0, sizeof(g_Can3RxData)); // 接收前先清空数组
-      HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO0, &RxHeader3, g_Can3RxData);
-
-      switch (RxHeader3.Identifier) { // 右臂
-      case 0x11:
-        dm4310_fbdata(&robot_body.arm_motor[0], g_Can3RxData,
-                      RxHeader3.DataLength);
-        mybuff3[0]++;
-        break;
-      case 0x12:
-        dm4310_fbdata(&robot_body.arm_motor[1], g_Can3RxData,
-                      RxHeader3.DataLength);
-        mybuff3[1]++;
-        break;
-      case 0x13:
-        dm3507_fbdata(&robot_body.arm_motor[2], g_Can3RxData,
-                      RxHeader3.DataLength);
-        mybuff3[2]++;
-        break;
-      case 0x14:
-        dm3507_fbdata(&robot_body.arm_motor[3], g_Can3RxData,
-                      RxHeader3.DataLength);
-        mybuff3[3]++;
-        break;
-      // 左臂
-      case 0x15:
-        dm4310_fbdata(&robot_body.arm_motor[4], g_Can3RxData,
-                      RxHeader3.DataLength);
-        mybuff3[4]++;
-        break;
-      case 0x16:
-        dm4310_fbdata(&robot_body.arm_motor[5], g_Can3RxData,
-                      RxHeader3.DataLength);
-        mybuff3[5]++;
-        break;
-      case 0x17:
-        dm3507_fbdata(&robot_body.arm_motor[6], g_Can3RxData,
-                      RxHeader3.DataLength);
-        mybuff3[6]++;
-        break;
-      case 0x18:
-        dm3507_fbdata(&robot_body.arm_motor[7], g_Can3RxData,
-                      RxHeader3.DataLength);
-        mybuff3[7]++;
-        break;
-
-      case 0x19:
-        dm6006_fbdata(&robot_body.loin_motor, g_Can3RxData,
-                      RxHeader3.DataLength);
-        mybuff3[8]++;
-        break;
-
       default:
         break;
       }
@@ -244,29 +199,24 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan,
       HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO1, &RxHeader2, g_Can2RxData);
       switch (RxHeader2.Identifier) { // 左腿
       case 0x15:
-        dm6006_fbdata(&chassis_move.joint_motor[0], g_Can2RxData,
+        dm6006_fbdata(&chassis_move.joint_motor[4], g_Can2RxData,
                       RxHeader2.DataLength);
-        mybuff2[0]++;
         break;
       case 0x14:
-        dm8006_fbdata(&chassis_move.joint_motor[1], g_Can2RxData,
+        dm8006_fbdata(&chassis_move.joint_motor[3], g_Can2RxData,
                       RxHeader2.DataLength);
-        mybuff2[1]++;
         break;
       case 0x13:
         dm8006_fbdata(&chassis_move.joint_motor[2], g_Can2RxData,
                       RxHeader2.DataLength);
-        mybuff2[2]++;
         break;
       case 0x12:
-        dm8006_fbdata(&chassis_move.joint_motor[3], g_Can2RxData,
+        dm8006_fbdata(&chassis_move.joint_motor[1], g_Can2RxData,
                       RxHeader2.DataLength);
-        mybuff2[3]++;
         break;
       case 0x11:
-        dm6006_fbdata(&chassis_move.joint_motor[4], g_Can2RxData,
+        dm6006_fbdata(&chassis_move.joint_motor[0], g_Can2RxData,
                       RxHeader2.DataLength);
-        mybuff2[4]++;
         break;
       default:
         break;
