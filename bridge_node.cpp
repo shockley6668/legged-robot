@@ -110,7 +110,11 @@ public:
     options.c_cflag &= ~CSIZE;
     options.c_cflag |= CS8;
     options.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
-    options.c_iflag &= ~(IXON | IXOFF | IXANY);
+    
+    // CRITICAL FIX: Disable special character translation for binary communication!
+    // Without ICRNL/INLCR/IGNCR it converts 0x0D (CR) to 0x0A (LF), corrupting payload and CRC!
+    options.c_iflag &= ~(IXON | IXOFF | IXANY | ICRNL | INLCR | IGNCR | ISTRIP | BRKINT);
+    
     options.c_oflag &= ~OPOST;
 
     tcsetattr(fd_, TCSANOW, &options);
@@ -345,40 +349,40 @@ private:
   }
 
   void process_buffer() {
-    // Basic state machine or just Frame sliding window
-    while (rx_buffer_.size() >=
-           12) { // Min Frame Size: 10 header + 0 payload + 2 CRC = 12
+    // Sliding window approach: search_idx keeps track of where we are evaluating
+    size_t search_idx = 0;
+
+    while (search_idx + 12 <= rx_buffer_.size()) { // Min Frame Size: 10 header + 0 payload + 2 CRC = 12
       // Look for STX
-      if (rx_buffer_[0] != MAVLinkV2::STX) {
-        rx_buffer_.erase(rx_buffer_.begin());
+      if (rx_buffer_[search_idx] != MAVLinkV2::STX) {
+        search_idx++;
         continue;
       }
 
-      uint8_t len = rx_buffer_[1];
+      uint8_t len = rx_buffer_[search_idx + 1];
       uint32_t total_len = 12 + len;
 
-      if (rx_buffer_.size() < total_len) {
-        // Wait for more data
-        return;
+      if (search_idx + total_len > rx_buffer_.size()) {
+        // Not enough data for the full frame yet, stop processing and wait for more
+        break;
       }
 
       // Check CRC
       uint16_t crc = 0xFFFF;
       for (size_t i = 1; i < total_len - 2; ++i) {
-        crc = MAVLinkV2::crc_accumulate(rx_buffer_[i], crc);
+        crc = MAVLinkV2::crc_accumulate(rx_buffer_[search_idx + i], crc);
       }
-      uint8_t crc_low = rx_buffer_[total_len - 2];
-      uint8_t crc_high = rx_buffer_[total_len - 1];
+      uint8_t crc_low = rx_buffer_[search_idx + total_len - 2];
+      uint8_t crc_high = rx_buffer_[search_idx + total_len - 1];
 
       if ((crc & 0xFF) == crc_low && ((crc >> 8) & 0xFF) == crc_high) {
         // Valid Frame, Extract ID and Payload
-        // MsgID is at index 7(Low), 8(Mid), 9(High)
-        // Payload starts at 10
-        uint32_t msgid =
-            rx_buffer_[7] | (rx_buffer_[8] << 8) | (rx_buffer_[9] << 16);
+        uint32_t msgid = rx_buffer_[search_idx + 7] | 
+                         (rx_buffer_[search_idx + 8] << 8) | 
+                         (rx_buffer_[search_idx + 9] << 16);
 
-        std::vector<uint8_t> payload(rx_buffer_.begin() + 10,
-                                     rx_buffer_.begin() + 10 + len);
+        std::vector<uint8_t> payload(rx_buffer_.begin() + search_idx + 10,
+                                     rx_buffer_.begin() + search_idx + 10 + len);
 
         if (msgid == 0x02) {
           parse_feedback(payload);
@@ -389,18 +393,21 @@ private:
           parse_imu(payload);
         }
 
-        // Remove processed frame
-        rx_buffer_.erase(rx_buffer_.begin(), rx_buffer_.begin() + total_len);
+        // Successfully parsed, skip over this entire message
+        search_idx += total_len;
       } else {
-        // Invalid CRC, drop packet start?
-        // Or just drop STX and retry searching?
-        // Dropping just STX is safer to resync
+        // Invalid CRC. We just skip the STX byte to re-sync
         static int crc_err_cnt = 0;
-        if (++crc_err_cnt % 100 == 0)
-          RCLCPP_WARN(this->get_logger(), "CRC Fail! Total: %d", crc_err_cnt);
-
-        rx_buffer_.erase(rx_buffer_.begin());
+        if (++crc_err_cnt % 100 == 0) {
+          RCLCPP_WARN(this->get_logger(), "CRC Fail! Total: %d. Found len: %d", crc_err_cnt, len);
+        }
+        search_idx++;
       }
+    }
+
+    // Clean up processed bytes from the front of the vector in O(N) operations once
+    if (search_idx > 0) {
+      rx_buffer_.erase(rx_buffer_.begin(), rx_buffer_.begin() + search_idx);
     }
   }
 

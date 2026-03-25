@@ -25,6 +25,7 @@
 
 extern chassis_t chassis_move;
 
+// 将周期还原为 10ms，即 100Hz
 uint32_t CHASSL_TIME = 10;
 
 float my_kd = 0.0f;

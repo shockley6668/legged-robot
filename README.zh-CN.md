@@ -18,13 +18,39 @@
 
 系统采用“底层驱动 + 中间件 + 任务层 + 算法层 + 控制层”分层设计：
 
-- 底层驱动层：GPIO、TIM、ADC、SPI、USART、FDCAN、DMA 等硬件外设
-- 中间件层：FreeRTOS、USB Device CDC
-- 任务层：机体控制、左右腿控制、IMU 处理、协议收发、电压检测、手柄输入等
-- 算法层：状态估计与滤波、控制算法
-- 控制层：运动控制与执行器控制接口
+- **底层驱动层**：GPIO、TIM、ADC、SPI、USART、FDCAN、DMA 等硬件外设
+- **中间件层**：FreeRTOS 任务调度、USB Device CDC
+- **任务层 (APP Layer)**：
+  - `chassisL_task` / `chassisR_task`：处理 FDCAN 指令、控制左右腿电机，并负责高频组包发送全车 10 个电机状态至上位机。
+  - `INS_task`：读取 BMI088 IMU，执行位姿估计算法，并通过 USB 下发传感器四元数/欧拉角。
+  - `protocol_task`：通过环形缓冲区 (Ring Buffer) 结合状态机，彻底消除粘包/长包断帧问题，稳定解析 USB 虚拟串口收到的 MAVLink V2 下发报文。
+  - `body_task` / `ps2_task` / `vbus_check`：处理机身决策逻辑、PS2手柄通讯、核心电源监测。
+- **算法层**：包含 EKF、Mahony、Kalman 滤波以及 PID 等控制求解。
+- **控制层**：运动控制规划、连杆 VMC 以及底盘运动模型的具体实现。
 
-## 3. 目录说明
+## 3. 上下位机通信协议 (MAVLink V2 Lite)
+
+固件通过 USB 虚拟串口 (CDC) 与 ROS 2 上位机使用紧凑的二进制 MAVLink V2 Lite 协议进行全双工通信，具有极高带宽高频能力。
+- **基础数据帧**: `10 Byte 帧头 (STX=0xFD)` + `动态长度 Payload` + `2 Byte X.25 CRC 校验`。
+- **上位机发 -> 下位机收 (控制下发)**:
+  - **MsgID 0x02**: 下发全部 10 个关节电机的目标位置（共 20 字节 Payload），高频闭环流。
+  - **MsgID 0xFF**: 标定某一个/所有电机的当前位置为零点（共 3 字节 Payload），低频服务指令。
+- **下位机发 -> 上位机收 (状态回传)**:
+  - **MsgID 0x03**: 电机状态信息回传，打包 10 个电机的当前位置与速度（共 40 字节 Payload）。由包含左腿/右腿任务在循环内维持 100Hz 甚至 500Hz 发送频率。
+  - **MsgID 0x04**: IMU 数据与解算信息回传，打包 float 类型的 4 元数、3 轴角速度和 3 轴线加速度（共 40 字节 Payload）。
+
+## 4. 上位机 ROS 2 桥接节点 (`bridge_node.cpp`)
+
+位于项目根目录下的 `bridge_node.cpp` 提供了一个高性能的 ROS 2 C++ 接口节点：
+- **ROS 话题输入端 (控制引脚)**:
+  - 控制话题：`/motor_cmds` (`std_msgs/msg/Float64MultiArray`)，发送包含 10维 位置（Float64）的数据。
+  - 清零话题：`/set_zero_cmd` (`std_msgs/msg/Int32`)
+  - 清零服务：`/set_zero_position` (`std_srvs/srv/Empty`)
+- **ROS 话题发布端 (反馈引脚)**:
+  - 机器状态：`/joint_states` (`sensor_msgs/msg/JointState`)，将收到的 16位 无符号整型映射为真实的位置速度并发布。
+  - 传感器层：`/imu/data` (`sensor_msgs/msg/Imu`)。
+
+## 5. 目录说明
 
 - `Core/`：CubeMX 生成的主工程代码（启动文件、中断、外设初始化）
 - `Startup/`：启动汇编文件
@@ -100,4 +126,5 @@ openocd -f stm32h723.cfg
 
 ## 9. License
 
-如仓库未单独提供项目级 License，请按源码文件头声明及第三方组件各自许可证要求使用。
+本项目使用 **MIT License**。详情请参阅项目根目录下的 [LICENSE](LICENSE) 文件。
+对于引入的第三方组件（如 FreeRTOS、STM32 HAL 库），请遵循其各自的许可证声明。
